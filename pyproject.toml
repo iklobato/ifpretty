@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ifpretty"
-version = "0.14.0"
+version = "0.14.1"
 description = "Prettify and enrich ifconfig output: aligned tables, IP/MAC/scope annotations, OUI vendor lookup, live DNS/DHCP/route, and a 1h bandwidth graph."
 readme = "README.md"
 requires-python = ">=3.9"
