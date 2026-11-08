@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ifpretty"
+version = "0.13.0"
+description = "Prettify and enrich ifconfig output: aligned tables, IP/MAC/scope annotations, OUI vendor lookup, live DNS/DHCP/route, and a 1h bandwidth graph."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "iklo", email = "tiktachack@gmail.com" }]
+keywords = ["ifconfig", "network", "networking", "cli", "terminal", "rich", "macos"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Monitoring",
+]
+dependencies = ["rich>=13"]
+
+[project.scripts]
+ifpretty = "ifpretty.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ifpretty = ["data/*.gz"]

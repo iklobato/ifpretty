@@ -1,0 +1,21 @@
+8 interfaces  ·  6 up
+
+lo0  ● up  ·  loopback                                      
+╭───────┬──────────────────────────────────────────────────╮
+│   mtu │ 16384        · jumbo frames                      │
+│  inet │ 127.0.0.1/8  · loopback                          │
+│ inet6 │ ::1/128      · loopback                          │
+╰───────┴──────────────────────────────────────────────────╯
+○ gif0  tunnel   down
+○ stf0  6to4 tunnel   down
+en0  ● active  ·  Ethernet/Wi-Fi                            
+╭───────┬──────────────────────────────────────────────────╮
+│ ether │ 14:7d:da:00:00:01                    Apple, Inc. │
+│  inet │ 192.168.1.201/24                     · private   │
+│ inet6 │ fd00:0:0:8:81a:80e2:b4c4:2811/64     · ULA       │
+│ inet6 │ 2001:470:1:2:78d0:2aee:6bfc:60a6/64  · global    │
+╰───────┴──────────────────────────────────────────────────╯
+● bridge0  bridge   inactive
+● en1  Ethernet/Wi-Fi   active
+● utun0  VPN/tunnel   up
+● en9  Ethernet/Wi-Fi   active
