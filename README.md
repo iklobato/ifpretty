@@ -10,6 +10,8 @@ diffing, and an interactive browser map of your whole network. Built on
 ifpretty
 ```
 
+![ifpretty: the essentials view of eight interfaces](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/default.svg)
+
 ## Install
 
 ```sh
@@ -26,6 +28,15 @@ Requires Python ≥ 3.9. The only runtime dependency is `rich`.
 - `ifpretty en0 en6` — limit to specific interfaces.
 
 Flags **compose**, e.g. `ifpretty -l -d` (live data + diff), `ifpretty -t -v` (full table).
+
+![ifpretty -l -d: what changed since the last run, plus live route, DNS and traffic](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/live-diff.svg)
+
+`ifpretty en0 en1` shows only those interfaces:
+
+![ifpretty en0 en1: only two interfaces](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/interfaces.svg)
+
+Every picture in this README is a real `ifpretty` run on made-up data
+(see [Development](#development)).
 
 ---
 
@@ -45,6 +56,22 @@ The **essentials view** shows each interface's identity, routable addresses (wit
 scope), gateway and throughput, and **collapses down / address‑less interfaces to
 a single dim line** to cut noise. `-v` expands them and shows every field.
 
+**Verbose** (`ifpretty -v`)
+
+![ifpretty -v: every field of every interface](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/verbose.svg)
+
+**Records** (`ifpretty -r`)
+
+![ifpretty -r: compact label/value list](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/records.svg)
+
+**Table** (`ifpretty -t`)
+
+![ifpretty -t: one wide table with all interfaces](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/table.svg)
+
+**Linux** (`ifconfig` from net-tools; RX/TX counters show without `--live`)
+
+![ifpretty on Linux net-tools ifconfig output](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/linux.svg)
+
 ---
 
 ## Always‑on enrichment (offline, no network)
@@ -63,12 +90,9 @@ network calls:
 - Decoded **flag / option / nd6** bitfields; IPv6 attributes aligned into columns.
 - A one‑line **overview** (interface count, default route, traffic totals).
 
-```
-en0  ● active  ·  Ethernet/Wi-Fi
-  ether  14:7d:da:00:00:01   (universal · Apple, Inc.)
-  inet   192.168.1.201/24  · private
-  inet6  2001:…:60a6/64     · global
-```
+In the pictures above: the OUI vendor next to each MAC (`Apple, Inc.`), the
+scope of each address (`private`, `ULA`, `global`), `jumbo frames` on a big
+MTU and the `⚠ half-duplex` warning in the table.
 
 ---
 
@@ -88,6 +112,8 @@ counters and DNS. Port names and the DHCP lease are macOS‑only.
 ifpretty -l
 ```
 
+![ifpretty -l: default route, gateway, DNS, DHCP lease and traffic on en0](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/live.svg)
+
 ## Gateway health — `-c` / `--check` (macOS)
 
 Pings the default gateway and reports **latency** (or `unreachable`).
@@ -95,6 +121,8 @@ Pings the default gateway and reports **latency** (or `unreachable`).
 ```sh
 ifpretty -c
 ```
+
+![ifpretty -c: gateway 192.168.1.1 answers in 1.4 ms](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/check.svg)
 
 ## Public IP — `-w` / `--wan` (opt‑in, external)
 
@@ -106,6 +134,8 @@ result is cached ~1 h, times out fast, and degrades silently offline.
 ifpretty -w
 ```
 
+![ifpretty -w: public IP, ASN and city in the overview line](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/wan.svg)
+
 ## What changed — `-d` / `--diff`
 
 **Every run records a snapshot** of the *stable* interface state (up/down,
@@ -115,13 +145,8 @@ addresses, MAC, mtu, media, gateway — deliberately **not** volatile counters).
 ```sh
 ifpretty -d
 ```
-```
-Changes since last run (3m ago):
-  + en7 appeared
-  - en1 removed
-  ~ en0
-      inet: +192.168.1.50/24  -192.168.1.201/24
-```
+
+![ifpretty -d: en9 removed and en0 got a new IPv4 address since the last run](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/diff.svg)
 
 ## 1‑hour bandwidth graph — `--record`
 
@@ -133,11 +158,7 @@ automatically:
 # once, e.g. in `crontab -e` — use the absolute path:
 * * * * * $(command -v ifpretty) --record
 ```
-```
-1h in    ▁▁▁▂▄█▅▂▁▁▁▁   peak 10.0 Mbps
-1h out   ▁▂▂▄▆█▄▂▂▁▁▁   peak 533.3 Kbps
-link use ████░░░░░░     40% of 1000 Mbps
-```
+![ifpretty -v en1: 1h in/out sparklines and a 40% link-use gauge](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/graph.svg)
 
 ## Network map — `--map`
 
@@ -151,6 +172,8 @@ Opens an **interactive browser graph** of your whole network in three zones:
 ifpretty --map            # default target 1.1.1.1
 ifpretty --map 8.8.8.8    # trace to a specific target
 ```
+
+![ifpretty --map: your computer, the local network and the route to 1.1.1.1](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/map.png)
 
 **Every IP is enriched** with everything useful:
 
@@ -167,6 +190,8 @@ self‑contained HTML file that opens automatically.
 ## Legend — `-x` / `--explain`
 
 Appends a legend explaining every flag / option / nd6 bit seen in the output.
+
+![ifpretty -x en0: legend for the flags, options and nd6 bits](https://raw.githubusercontent.com/iklobato/ifpretty/main/docs/img/explain.svg)
 
 ## Refresh vendor DB — `--update-oui`
 
@@ -234,6 +259,16 @@ ruff check src tests && mypy src
 
 Layout snapshots are pinned to golden files; regenerate intentionally with
 `REGEN=1 python3 tests/test_ifpretty.py`.
+
+The README pictures come from `docs/make_images.py` (macOS): it runs the real
+CLI with a fake `ifconfig`, fake `route`/`netstat`/`scutil`/`ipconfig`/`ping`
+and a seeded cache, so no address of your machine ends up in an image. CI
+regenerates the SVGs and fails when they are out of date.
+
+```sh
+uv run python docs/make_images.py             # SVGs + the --map PNG (needs Chrome)
+uv run python docs/make_images.py --svg-only  # SVGs only, what CI checks
+```
 
 ## License
 
