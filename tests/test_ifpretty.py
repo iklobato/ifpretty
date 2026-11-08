@@ -5,10 +5,14 @@ so each layout is pinned to a golden file. Run: python3 -m unittest -v
 (from /Users/iklo/scripts). Regenerate goldens intentionally with REGEN=1.
 """
 
+from __future__ import annotations
+
 import json
 import os
+import stat
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -27,24 +31,24 @@ MODES = {
 }
 
 
-def run(flags, stdin_text, history="/nonexistent/ifpretty-history.csv"):
-    # Isolate the bandwidth datastore so layout snapshots never pick up real
-    # recorded history (which would be non-deterministic). Run the package
-    # in-place via `python -m ifpretty` (PYTHONPATH=src), no install needed.
-    env = {
-        **os.environ,
-        "NO_COLOR": "1",
-        "IFPRETTY_HISTORY": history,
-        "IFPRETTY_CACHE": "/nonexistent/ifpretty-cache",  # force bundled OUI, no WAN cache
-        "PYTHONPATH": str(SRC),
-    }
-    return subprocess.run(
-        [sys.executable, "-m", "ifpretty", *flags],
-        input=stdin_text,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+def run(flags, stdin_text, history=None):
+    # Fresh temp history + cache per call, so no --diff baseline leaks between
+    # tests ("/nonexistent" is creatable by root on Linux). PYTHONPATH=src.
+    with tempfile.TemporaryDirectory() as scratch:
+        env = {
+            **os.environ,
+            "NO_COLOR": "1",
+            "IFPRETTY_HISTORY": history or str(Path(scratch) / "history.csv"),
+            "IFPRETTY_CACHE": str(Path(scratch) / "cache"),  # bundled OUI, no WAN cache
+            "PYTHONPATH": str(SRC),
+        }
+        return subprocess.run(
+            [sys.executable, "-m", "ifpretty", *flags],
+            input=stdin_text,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
 
 
 class SnapshotTest(unittest.TestCase):
@@ -67,33 +71,6 @@ class SnapshotTest(unittest.TestCase):
         result = run([], "\n")
         self.assertEqual(result.returncode, 1)
         self.assertIn("no interface data", result.stderr)
-
-    def test_acquire_input_runs_ifconfig_when_not_piped(self):
-        from unittest import mock
-
-        sys.path.insert(0, str(SRC))
-        from ifpretty import cli
-
-        fake = mock.Mock(stdout="en0: flags=1<UP> mtu 1500\n")
-        with (
-            mock.patch.object(cli.subprocess, "run", return_value=fake) as run_mock,
-            mock.patch.object(cli.sys.stdin, "isatty", return_value=True),
-        ):
-            out = cli.acquire_input(["en0"])
-        self.assertEqual(out, fake.stdout)
-        self.assertEqual(run_mock.call_args[0][0], ["ifconfig", "en0"])
-
-    def test_acquire_input_reads_stdin_when_piped(self):
-        from unittest import mock
-
-        sys.path.insert(0, str(SRC))
-        from ifpretty import cli
-
-        with (
-            mock.patch.object(cli.sys.stdin, "isatty", return_value=False),
-            mock.patch.object(cli.sys.stdin, "read", return_value="piped data"),
-        ):
-            self.assertEqual(cli.acquire_input([]), "piped data")
 
     def test_explain_appends_legend(self):
         result = run(["--explain"], SAMPLE.read_text())
@@ -220,6 +197,110 @@ class SnapshotTest(unittest.TestCase):
         result = run(["--diff", "--records"], SAMPLE.read_text())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("baseline", result.stdout)
+
+
+IFCONFIG_TEXT = "en0: flags=1<UP> mtu 1500\n"
+PIPED_TEXT = "piped data"
+EXECUTABLE_MODE = 0o755
+
+
+class AcquireInputTest(unittest.TestCase):
+    """stdin is read only when something was piped or redirected in."""
+
+    def _acquire_with_stdin_mode(self, st_mode: int) -> tuple[str, list[str] | None]:
+        """Run acquire_input with stdin of this file type; return (text, ifconfig argv)."""
+        from unittest import mock
+
+        sys.path.insert(0, str(SRC))
+        from ifpretty import cli
+
+        ifconfig_result = mock.Mock(stdout=IFCONFIG_TEXT)
+        fake_stdin = mock.Mock(fileno=lambda: 0, read=lambda: PIPED_TEXT)
+        with (
+            mock.patch.object(cli.subprocess, "run", return_value=ifconfig_result) as ran,
+            mock.patch.object(cli.sys, "stdin", fake_stdin),
+            mock.patch.object(cli.os, "fstat", return_value=mock.Mock(st_mode=st_mode)),
+        ):
+            text = cli.acquire_input(["en0"])
+        return text, ran.call_args[0][0] if ran.called else None
+
+    def test_tty_runs_ifconfig(self) -> None:
+        self.assertEqual(
+            self._acquire_with_stdin_mode(stat.S_IFCHR), (IFCONFIG_TEXT, ["ifconfig", "en0"])
+        )
+
+    def test_socket_runs_ifconfig(self) -> None:
+        self.assertEqual(
+            self._acquire_with_stdin_mode(stat.S_IFSOCK), (IFCONFIG_TEXT, ["ifconfig", "en0"])
+        )
+
+    def test_pipe_is_read(self) -> None:
+        self.assertEqual(self._acquire_with_stdin_mode(stat.S_IFIFO), (PIPED_TEXT, None))
+
+    def test_redirected_file_is_read(self) -> None:
+        self.assertEqual(self._acquire_with_stdin_mode(stat.S_IFREG), (PIPED_TEXT, None))
+
+    def test_closed_stdin_runs_ifconfig(self) -> None:
+        from unittest import mock
+
+        sys.path.insert(0, str(SRC))
+        from ifpretty import cli
+
+        closed_stdin = mock.Mock(fileno=mock.Mock(side_effect=ValueError("closed")))
+        with (
+            mock.patch.object(cli.subprocess, "run", return_value=mock.Mock(stdout=IFCONFIG_TEXT)),
+            mock.patch.object(cli.sys, "stdin", closed_stdin),
+        ):
+            self.assertEqual(cli.acquire_input([]), IFCONFIG_TEXT)
+
+    def _stub_ifconfig_env(self, bindir: str) -> dict[str, str]:
+        """Env with a fake `ifconfig` first on PATH that prints the macOS sample."""
+        stub = Path(bindir) / "ifconfig"
+        stub.write_text(f"#!/bin/sh\ncat '{SAMPLE}'\n")
+        stub.chmod(EXECUTABLE_MODE)
+        return {
+            **os.environ,
+            "NO_COLOR": "1",
+            "IFPRETTY_CACHE": str(Path(bindir) / "cache"),
+            "PYTHONPATH": str(SRC),
+            "PATH": bindir + os.pathsep + os.environ.get("PATH", ""),
+        }
+
+    def test_devnull_stdin_runs_ifconfig_end_to_end(self) -> None:
+        # cron, CI and `docker run` without -t give /dev/null, not piped input.
+        with tempfile.TemporaryDirectory() as bindir:
+            completed = subprocess.run(
+                [sys.executable, "-m", "ifpretty", "--records"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                env=self._stub_ifconfig_env(bindir),
+                check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("8 interfaces", completed.stdout)
+
+
+class OuiDownloadTest(unittest.TestCase):
+    def test_update_oui_sends_own_user_agent(self) -> None:
+        # standards-oui.ieee.org answers HTTP 418 to the default Python-urllib agent.
+        from unittest import mock
+
+        sys.path.insert(0, str(SRC))
+        from ifpretty import enrich
+
+        response = mock.MagicMock()
+        response.read.return_value = b"Registry,Assignment,Organization Name\r\nMA-L,A0B1C2,Acme\r\n"
+        response.__enter__.return_value = response
+        with (
+            tempfile.TemporaryDirectory() as cache,
+            mock.patch.object(enrich, "_CACHE_DIR", Path(cache)),
+            mock.patch.object(enrich.urllib.request, "urlopen", return_value=response) as opened,
+        ):
+            self.assertEqual(enrich.update_oui(), 0)
+        request = opened.call_args[0][0]
+        self.assertEqual(request.full_url, "https://standards-oui.ieee.org/oui/oui.csv")
+        self.assertTrue(request.get_header("User-agent", "").startswith("ifpretty "))
 
 
 if __name__ == "__main__":

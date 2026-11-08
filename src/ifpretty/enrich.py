@@ -352,6 +352,9 @@ _WAN_URL = "https://ipapi.co/json/"
 
 _OUI_URL = "https://standards-oui.ieee.org/oui/oui.csv"
 
+# standards-oui.ieee.org answers HTTP 418 to the default "Python-urllib/x.y" agent.
+_USER_AGENT = "ifpretty (+https://github.com/iklobato/ifpretty)"
+
 
 def fetch_wan(timeout: float = 3.0) -> dict[str, str] | None:
     """Public IP + ASN/ISP/geo via ipapi.co (cached ~1h). None on any failure.
@@ -395,7 +398,8 @@ def fetch_wan(timeout: float = 3.0) -> dict[str, str] | None:
 def update_oui(timeout: float = 60.0) -> int:
     """Download the IEEE OUI registry into the user cache (refreshes vendor lookup)."""
     try:
-        with urllib.request.urlopen(_OUI_URL, timeout=timeout) as resp:
+        request = urllib.request.Request(_OUI_URL, headers={"User-Agent": _USER_AGENT})
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", "replace")
     except OSError as e:
         print(f"ifpretty: --update-oui failed ({e})", file=sys.stderr)

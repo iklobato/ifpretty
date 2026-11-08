@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -35,8 +37,14 @@ def _capture_ifconfig(interfaces: list[str]) -> str:
 
 
 def acquire_input(interfaces: list[str]) -> str:
-    """ifconfig text: read stdin when piped, else run `ifconfig` ourselves."""
-    if not sys.stdin.isatty():
+    """ifconfig text: read stdin when piped or redirected from a file, else run
+    `ifconfig` ourselves. A TTY, /dev/null (cron, CI, `docker run` without -t),
+    a socket or a closed stdin carries no piped text."""
+    try:
+        mode = os.fstat(sys.stdin.fileno()).st_mode
+    except (OSError, ValueError, AttributeError):
+        mode = 0
+    if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
         return sys.stdin.read()
     return _capture_ifconfig(interfaces)
 
