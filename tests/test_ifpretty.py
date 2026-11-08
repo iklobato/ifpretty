@@ -466,5 +466,19 @@ class InterfaceFilterTest(unittest.TestCase):
         self.assertEqual(self._shown_names(completed.stdout), ["en0"])
 
 
+# rich reads ":cd:" as the 💿 emoji code and ":ab:" as 🆎.
+EMOJI_MAC = "a6:cd:4a:ab:37:89"
+
+
+class EmojiCodeTest(unittest.TestCase):
+    def test_mac_with_emoji_codes_prints_as_is(self) -> None:
+        text = SAMPLE.read_text().replace("14:7d:da:00:00:01", EMOJI_MAC)
+        for mode, flags in MODES.items():
+            with self.subTest(mode=mode):
+                completed = run([*flags, "en0"], text)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertIn(EMOJI_MAC, completed.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

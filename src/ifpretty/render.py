@@ -28,6 +28,9 @@ from .formatting import (
 )
 from .model import Interface, JsonObject
 
+# Off: rich would turn ":cd:" / ":ab:" inside a MAC or IPv6 address into 💿 / 🆎.
+SHOW_EMOJI_CODES = False
+
 
 def render_diff(
     prev: tuple[dict[str, JsonObject], int] | None, new: dict[str, JsonObject]
@@ -51,7 +54,9 @@ def render_diff(
 
 
 def _console(non_tty_width: int) -> Console:
-    return Console(width=None if sys.stdout.isatty() else non_tty_width)
+    return Console(
+        width=None if sys.stdout.isatty() else non_tty_width, emoji=SHOW_EMOJI_CODES
+    )
 
 
 def render_boxed(interfaces: list[Interface], verbose: bool = False) -> None:
@@ -125,7 +130,7 @@ def render_table(interfaces: list[Interface], verbose: bool = False) -> None:
     """All interfaces and all fields in one wide table; cap width at 240."""
     cap = 240
     term = shutil.get_terminal_size((cap, 24)).columns if sys.stdout.isatty() else cap
-    console = Console(width=min(term, cap))
+    console = Console(width=min(term, cap), emoji=SHOW_EMOJI_CODES)
 
     table = Table(
         box=box.ROUNDED, header_style="bold cyan", title="ifconfig", show_lines=True
@@ -226,7 +231,9 @@ _GLOSSARY = {
 
 
 def render_legend(interfaces: list[Interface]) -> None:
-    console = Console(width=None if sys.stdout.isatty() else 100)
+    console = Console(
+        width=None if sys.stdout.isatty() else 100, emoji=SHOW_EMOJI_CODES
+    )
     sections = [
         ("flags", sorted({t for i in interfaces for t in i.flags})),
         ("options", sorted({t for i in interfaces for t in i.options})),
