@@ -100,6 +100,66 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(parse.parse("\n\n"), [])
 
 
+LINUX_SAMPLE = Path(__file__).parent / "fixtures" / "sample_linux.txt"
+ETH0_RX = (6007, 13082891, 2)  # packets, bytes, errors
+ETH0_TX = (2951, 198556, 0)
+ETH0_COLLISIONS = 1
+
+
+class LinuxParseTest(unittest.TestCase):
+    """net-tools 2.x `ifconfig -a` (Debian/Ubuntu/Fedora): blank-line separated
+    blocks, dotted netmasks, `ether MAC txqueuelen N (type)`, RX/TX counters."""
+
+    def setUp(self) -> None:
+        parsed = parse.parse(LINUX_SAMPLE.read_text())
+        self.ifaces = {interface.name: interface for interface in parsed}
+
+    def test_all_interfaces_found(self) -> None:
+        self.assertEqual(
+            set(self.ifaces), {"br0", "dummy0", "dummy1", "eth0", "gre0", "lo", "tunl0"}
+        )
+
+    def test_dotted_netmask_becomes_cidr(self) -> None:
+        eth0 = self.ifaces["eth0"].inet[0]
+        self.assertEqual(eth0.netmask, "255.255.0.0/16")
+        self.assertEqual(eth0.broadcast, "172.17.255.255")
+        self.assertEqual(self.ifaces["lo"].inet[0].netmask, "255.0.0.0/8")
+
+    def test_bad_dotted_netmask_passes_through(self) -> None:
+        text = "x0: flags=1<UP>  mtu 1500\n        inet 10.0.0.1  netmask 255.0.255.0\n"
+        self.assertEqual(parse.parse(text)[0].inet[0].netmask, "255.0.255.0")
+
+    def test_ether_is_only_the_mac(self) -> None:
+        eth0 = self.ifaces["eth0"]
+        self.assertEqual(eth0.ether, "fa:92:de:8b:8a:48")
+        self.assertIn("txqueuelen 0  (Ethernet)", eth0.other)
+
+    def test_rx_tx_counters_parsed_not_kept_as_text(self) -> None:
+        eth0 = self.ifaces["eth0"]
+        self.assertEqual((eth0.rx_pkts, eth0.rx_bytes, eth0.rx_errs), ETH0_RX)
+        self.assertEqual((eth0.tx_pkts, eth0.tx_bytes, eth0.tx_errs), ETH0_TX)
+        self.assertEqual(eth0.collisions, ETH0_COLLISIONS)
+        self.assertFalse(any(line.startswith(("RX ", "TX ")) for line in eth0.other))
+
+    def test_non_ether_link_lines_stay_verbatim(self) -> None:
+        self.assertEqual(self.ifaces["lo"].ether, "")
+        self.assertIn(
+            "loop  txqueuelen 1000  (Local Loopback)", self.ifaces["lo"].other
+        )
+        self.assertEqual(self.ifaces["gre0"].ether, "")
+
+    def test_inet6_scopeid_tag_dropped(self) -> None:
+        global6 = self.ifaces["dummy0"].inet6[0]
+        self.assertEqual(
+            (global6.addr, global6.prefixlen, global6.attrs),
+            ("2001:db8:1::10", "64", ()),
+        )
+
+    def test_down_interface_has_no_up_flag(self) -> None:
+        self.assertFalse(self.ifaces["dummy1"].is_up)
+        self.assertTrue(self.ifaces["eth0"].is_up)
+
+
 class KvPairsTest(unittest.TestCase):
     def test_word_number_pairs(self):
         self.assertEqual(
@@ -133,6 +193,23 @@ class DerivationTest(unittest.TestCase):
         self.assertEqual(model.interface_role("utun3"), "VPN/tunnel")
         self.assertEqual(model.interface_role("bridge0"), "bridge")
         self.assertEqual(model.interface_role("zzz9"), "")
+
+    def test_linux_interface_roles(self) -> None:
+        cases = {
+            "lo": "loopback",
+            "eth0": "Ethernet",
+            "enp3s0": "Ethernet",
+            "wlan0": "Wi-Fi",
+            "wlp2s0": "Wi-Fi",
+            "br0": "bridge",
+            "docker0": "Docker bridge",
+            "veth1a2b3c": "virtual Ethernet",
+            "tun0": "VPN/tunnel",
+            "wg0": "WireGuard",
+        }
+        for name, role in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(model.interface_role(name), role)
 
     def test_mac_kind(self):
         self.assertEqual(enrich.mac_kind("14:7d:da:00:00:01"), "universal")
@@ -397,6 +474,19 @@ class FormatterTest(unittest.TestCase):
         )
         self.assertIn("fe80::1", verb)  # link-local shown in verbose
         self.assertIn("TSO4", verb)  # options shown
+
+    def test_linux_link_line_labeled_link_not_bridge(self) -> None:
+        eth0 = iface("eth0", other=["txqueuelen 0  (Ethernet)"])
+        labels = [label for label, _ in formatting.interface_fields(eth0, verbose=True)]
+        self.assertIn("link", labels)
+        self.assertNotIn("bridge", labels)
+
+    def test_bridge_config_keeps_bridge_label(self) -> None:
+        bridge0 = iface("bridge0", other=["Configuration:", "id 0:0:0:0:0:0"])
+        labels = [
+            label for label, _ in formatting.interface_fields(bridge0, verbose=True)
+        ]
+        self.assertEqual(labels, ["bridge", ""])
 
     def test_inet6_slot_columns_align_across_rows(self):
         rows = [

@@ -204,6 +204,27 @@ class SnapshotTest(unittest.TestCase):
         self.assertIn("baseline", result.stdout)
 
 
+LINUX_SAMPLE = FIXTURES / "sample_linux.txt"
+
+
+class LinuxSnapshotTest(unittest.TestCase):
+    """Linux net-tools layouts, pinned like the macOS ones (REGEN=1 rewrites)."""
+
+    def _check_golden(self, mode: str, output: str) -> None:
+        golden = FIXTURES / f"golden_linux_{mode}.txt"
+        if os.environ.get("REGEN"):
+            golden.write_text(output)
+        self.assertEqual(output, golden.read_text(), f"linux {mode} drifted")
+
+    def test_linux_layouts_match_golden(self) -> None:
+        sample = LINUX_SAMPLE.read_text()
+        for mode, flags in MODES.items():
+            with self.subTest(mode=mode):
+                completed = run(flags, sample)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self._check_golden(mode, completed.stdout)
+
+
 IFCONFIG_TEXT = "en0: flags=1<UP> mtu 1500\n"
 PIPED_TEXT = "piped data"
 EXECUTABLE_MODE = 0o755

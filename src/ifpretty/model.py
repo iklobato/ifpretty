@@ -75,6 +75,22 @@ _ROLES = {
     "ap": "access point",
     "en": "Ethernet/Wi-Fi",
     "anpi": "Apple private",
+    # Linux names (classic and systemd predictable: enp3s0, wlp2s0, ...)
+    "eth": "Ethernet",
+    "enp": "Ethernet",
+    "ens": "Ethernet",
+    "eno": "Ethernet",
+    "enx": "Ethernet",
+    "wlan": "Wi-Fi",
+    "wlp": "Wi-Fi",
+    "br": "bridge",
+    "docker": "Docker bridge",
+    "veth": "virtual Ethernet",
+    "tun": "VPN/tunnel",
+    "wg": "WireGuard",
+    "tunl": "tunnel",
+    "gre": "tunnel",
+    "sit": "IPv6-in-IPv4 tunnel",
 }
 
 

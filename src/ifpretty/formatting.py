@@ -120,6 +120,8 @@ def errors_value(iface: Interface) -> str:
 
 DASH = "[grey50]—[/]"
 
+LINK_INFO_MARK = "txqueuelen"  # Linux net-tools link line: "loop  txqueuelen 1000 ..."
+
 
 def status_badge(iface: Interface) -> str:
     if iface.status == "active":
@@ -325,8 +327,15 @@ def _fields_verbose(iface: Interface) -> list[tuple[str, str]]:
     add("nd6 options", "  ".join(iface.nd6))
     add("media", iface.media + media_note(iface.media) if iface.media else "")
     rows += _live_and_graph_rows(iface)
-    for i, line in enumerate(iface.other):
-        add("bridge" if i == 0 else "", _color_kv_line(line, sep="    "))
+    # Leftover lines: Linux "txqueuelen N (type)" link info, else a macOS bridge
+    # config block (labelled once) or anything else ifconfig printed.
+    group_label = "bridge" if iface.role == "bridge" else "other"
+    for line in iface.other:
+        if LINK_INFO_MARK in line:
+            add("link", _color_kv_line(line, sep="    "))
+            continue
+        add(group_label, _color_kv_line(line, sep="    "))
+        group_label = ""
     return rows
 
 

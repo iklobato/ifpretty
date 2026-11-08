@@ -1,0 +1,28 @@
+7 interfaces  ·  4 up  ·  ↓ 12.5 MB  ↑ 194.6 KB
+
+● br0  bridge   up
+dummy0  ● up                                                
+╭─────────┬────────────────────────────────────────────────╮
+│   ether │ 86:64:46:dd:59:56                              │
+│    inet │ 192.0.2.10/24      · private                   │
+│   inet6 │ 2001:db8:1::10/64  · private                   │
+│ traffic │ ↓ 0 B (0 pkts)   ↑ 70 B (1 pkts)               │
+╰─────────┴────────────────────────────────────────────────╯
+○ dummy1   down
+eth0  ● up  ·  Ethernet                                     
+╭─────────┬────────────────────────────────────────────────╮
+│     mtu │ 65535          · jumbo frames                  │
+│   ether │ fa:92:de:8b:8a:48                              │
+│    inet │ 172.17.0.2/16  · private                       │
+│ traffic │ ↓ 12.5 MB (6.0k pkts)   ↑ 193.9 KB (3.0k pkts) │
+│  errors │ in 2  out 0  coll 1                            │
+╰─────────┴────────────────────────────────────────────────╯
+○ gre0  tunnel   down
+lo  ● up  ·  loopback                                       
+╭─────────┬────────────────────────────────────────────────╮
+│     mtu │ 65536        · jumbo frames                    │
+│    inet │ 127.0.0.1/8  · loopback                        │
+│   inet6 │ ::1/128      · loopback                        │
+│ traffic │ ↓ 0 B (0 pkts)   ↑ 0 B (0 pkts)                │
+╰─────────┴────────────────────────────────────────────────╯
+○ tunl0  tunnel   down
