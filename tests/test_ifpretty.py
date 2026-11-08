@@ -344,5 +344,55 @@ class OuiDownloadTest(unittest.TestCase):
         self.assertTrue(request.get_header("User-agent", "").startswith("ifpretty "))
 
 
+class OuiTlsFallbackTest(unittest.TestCase):
+    """macOS Python reads /etc/ssl/cert.pem, which can miss a root the Keychain
+    trusts (IEEE's GlobalSign Root R46); curl uses the Keychain, so retry there."""
+
+    def _update_with(
+        self, url_error: Exception, curl_output: str | None
+    ) -> tuple[int, list[str] | None]:
+        """Run update_oui with urlopen raising url_error; return (exit code, curl argv)."""
+        from unittest import mock
+
+        sys.path.insert(0, str(SRC))
+        from ifpretty import enrich
+
+        with (
+            tempfile.TemporaryDirectory() as cache,
+            mock.patch.object(enrich, "_CACHE_DIR", Path(cache)),
+            mock.patch.object(enrich.urllib.request, "urlopen", side_effect=url_error),
+            mock.patch.object(enrich, "_run", return_value=curl_output) as ran,
+            mock.patch("sys.stderr"),
+        ):
+            code = enrich.update_oui()
+        return code, ran.call_args[0][0] if ran.called else None
+
+    def test_cert_error_falls_back_to_curl(self) -> None:
+        import ssl
+        import urllib.error
+
+        cert_error = urllib.error.URLError(ssl.SSLCertVerificationError("self-signed"))
+        code, argv = self._update_with(cert_error, OUI_CSV.decode())
+        self.assertEqual(code, 0)
+        self.assertEqual(argv[0], "curl")
+        self.assertIn("https://standards-oui.ieee.org/oui/oui.csv", argv)
+        self.assertTrue(argv[argv.index("-A") + 1].startswith("ifpretty "))
+
+    def test_cert_error_and_curl_failing_exits_1(self) -> None:
+        import ssl
+        import urllib.error
+
+        cert_error = urllib.error.URLError(ssl.SSLCertVerificationError("self-signed"))
+        self.assertEqual(self._update_with(cert_error, None)[0], 1)
+
+    def test_other_network_error_does_not_try_curl(self) -> None:
+        import urllib.error
+
+        code, argv = self._update_with(
+            urllib.error.URLError("timed out"), OUI_CSV.decode()
+        )
+        self.assertEqual((code, argv), (1, None))
+
+
 if __name__ == "__main__":
     unittest.main()

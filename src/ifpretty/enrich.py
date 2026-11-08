@@ -10,9 +10,11 @@ import ipaddress
 import json
 import os
 import re
+import ssl
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -142,7 +144,7 @@ def _run(cmd: list[str], timeout: float = 3.0) -> str | None:
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError) as e:
-        print(f"ifpretty: --live: {cmd[0]} failed ({e})", file=sys.stderr)
+        sys.stderr.write(f"ifpretty: could not run {cmd[0]} ({e})\n")
         return None
     return r.stdout or None  # route(8) returns nonzero with no default route — tolerate
 
@@ -509,8 +511,15 @@ def update_oui(timeout: float = 60.0) -> int:
         with urllib.request.urlopen(request, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", "replace")
     except OSError as e:
-        print(f"ifpretty: --update-oui failed ({e})", file=sys.stderr)
-        return 1
+        reason = e.reason if isinstance(e, urllib.error.URLError) else e
+        raw = None
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            # Python reads /etc/ssl/cert.pem, which on older macOS lacks roots the
+            # Keychain trusts (IEEE uses GlobalSign Root R46); curl uses the Keychain.
+            raw = _run(["curl", "-fsSL", "-A", _USER_AGENT, _OUI_URL], timeout=timeout)
+        if raw is None:
+            print(f"ifpretty: --update-oui failed ({e})", file=sys.stderr)
+            return 1
     rows: dict[str, str] = {}
     for rec in csv.DictReader(io.StringIO(raw)):
         prefix = (rec.get("Assignment") or "").strip().upper()
