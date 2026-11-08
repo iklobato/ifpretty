@@ -20,6 +20,10 @@ HERE = Path(__file__).parent
 SRC = HERE.parent / "src"
 FIXTURES = HERE / "fixtures"
 SAMPLE = FIXTURES / "sample.txt"
+# rich honors FORCE_COLOR over NO_COLOR's "no styles", so a shell exporting it
+# would turn the plain-text goldens into ANSI. Strip it from child envs.
+COLOR_FORCING_VAR = "FORCE_COLOR"
+OUI_CSV = b"Registry,Assignment,Organization Name\r\nMA-L,A0B1C2,Acme\r\n"
 
 MODES = {
     "boxed": [],
@@ -35,13 +39,14 @@ def run(flags, stdin_text, history=None):
     # Fresh temp history + cache per call, so no --diff baseline leaks between
     # tests ("/nonexistent" is creatable by root on Linux). PYTHONPATH=src.
     with tempfile.TemporaryDirectory() as scratch:
-        env = {
-            **os.environ,
-            "NO_COLOR": "1",
-            "IFPRETTY_HISTORY": history or str(Path(scratch) / "history.csv"),
-            "IFPRETTY_CACHE": str(Path(scratch) / "cache"),  # bundled OUI, no WAN cache
-            "PYTHONPATH": str(SRC),
-        }
+        env = os.environ.copy()
+        env.pop(COLOR_FORCING_VAR, None)
+        env.update(
+            NO_COLOR="1",
+            IFPRETTY_HISTORY=history or str(Path(scratch) / "history.csv"),
+            IFPRETTY_CACHE=str(Path(scratch) / "cache"),  # bundled OUI, no WAN cache
+            PYTHONPATH=str(SRC),
+        )
         return subprocess.run(
             [sys.executable, "-m", "ifpretty", *flags],
             input=stdin_text,
@@ -217,7 +222,9 @@ class AcquireInputTest(unittest.TestCase):
         ifconfig_result = mock.Mock(stdout=IFCONFIG_TEXT)
         fake_stdin = mock.Mock(fileno=lambda: 0, read=lambda: PIPED_TEXT)
         with (
-            mock.patch.object(cli.subprocess, "run", return_value=ifconfig_result) as ran,
+            mock.patch.object(
+                cli.subprocess, "run", return_value=ifconfig_result
+            ) as ran,
             mock.patch.object(cli.sys, "stdin", fake_stdin),
             mock.patch.object(cli.os, "fstat", return_value=mock.Mock(st_mode=st_mode)),
         ):
@@ -226,19 +233,25 @@ class AcquireInputTest(unittest.TestCase):
 
     def test_tty_runs_ifconfig(self) -> None:
         self.assertEqual(
-            self._acquire_with_stdin_mode(stat.S_IFCHR), (IFCONFIG_TEXT, ["ifconfig", "en0"])
+            self._acquire_with_stdin_mode(stat.S_IFCHR),
+            (IFCONFIG_TEXT, ["ifconfig", "en0"]),
         )
 
     def test_socket_runs_ifconfig(self) -> None:
         self.assertEqual(
-            self._acquire_with_stdin_mode(stat.S_IFSOCK), (IFCONFIG_TEXT, ["ifconfig", "en0"])
+            self._acquire_with_stdin_mode(stat.S_IFSOCK),
+            (IFCONFIG_TEXT, ["ifconfig", "en0"]),
         )
 
     def test_pipe_is_read(self) -> None:
-        self.assertEqual(self._acquire_with_stdin_mode(stat.S_IFIFO), (PIPED_TEXT, None))
+        self.assertEqual(
+            self._acquire_with_stdin_mode(stat.S_IFIFO), (PIPED_TEXT, None)
+        )
 
     def test_redirected_file_is_read(self) -> None:
-        self.assertEqual(self._acquire_with_stdin_mode(stat.S_IFREG), (PIPED_TEXT, None))
+        self.assertEqual(
+            self._acquire_with_stdin_mode(stat.S_IFREG), (PIPED_TEXT, None)
+        )
 
     def test_closed_stdin_runs_ifconfig(self) -> None:
         from unittest import mock
@@ -248,7 +261,9 @@ class AcquireInputTest(unittest.TestCase):
 
         closed_stdin = mock.Mock(fileno=mock.Mock(side_effect=ValueError("closed")))
         with (
-            mock.patch.object(cli.subprocess, "run", return_value=mock.Mock(stdout=IFCONFIG_TEXT)),
+            mock.patch.object(
+                cli.subprocess, "run", return_value=mock.Mock(stdout=IFCONFIG_TEXT)
+            ),
             mock.patch.object(cli.sys, "stdin", closed_stdin),
         ):
             self.assertEqual(cli.acquire_input([]), IFCONFIG_TEXT)
@@ -258,13 +273,15 @@ class AcquireInputTest(unittest.TestCase):
         stub = Path(bindir) / "ifconfig"
         stub.write_text(f"#!/bin/sh\ncat '{SAMPLE}'\n")
         stub.chmod(EXECUTABLE_MODE)
-        return {
-            **os.environ,
-            "NO_COLOR": "1",
-            "IFPRETTY_CACHE": str(Path(bindir) / "cache"),
-            "PYTHONPATH": str(SRC),
-            "PATH": bindir + os.pathsep + os.environ.get("PATH", ""),
-        }
+        env = os.environ.copy()
+        env.pop(COLOR_FORCING_VAR, None)
+        env.update(
+            NO_COLOR="1",
+            IFPRETTY_CACHE=str(Path(bindir) / "cache"),
+            PYTHONPATH=str(SRC),
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+        )
+        return env
 
     def test_devnull_stdin_runs_ifconfig_end_to_end(self) -> None:
         # cron, CI and `docker run` without -t give /dev/null, not piped input.
@@ -282,20 +299,23 @@ class AcquireInputTest(unittest.TestCase):
 
 
 class OuiDownloadTest(unittest.TestCase):
+    """standards-oui.ieee.org answers HTTP 418 to the default Python-urllib agent."""
+
     def test_update_oui_sends_own_user_agent(self) -> None:
-        # standards-oui.ieee.org answers HTTP 418 to the default Python-urllib agent.
         from unittest import mock
 
         sys.path.insert(0, str(SRC))
         from ifpretty import enrich
 
         response = mock.MagicMock()
-        response.read.return_value = b"Registry,Assignment,Organization Name\r\nMA-L,A0B1C2,Acme\r\n"
+        response.read.return_value = OUI_CSV
         response.__enter__.return_value = response
         with (
             tempfile.TemporaryDirectory() as cache,
             mock.patch.object(enrich, "_CACHE_DIR", Path(cache)),
-            mock.patch.object(enrich.urllib.request, "urlopen", return_value=response) as opened,
+            mock.patch.object(
+                enrich.urllib.request, "urlopen", return_value=response
+            ) as opened,
         ):
             self.assertEqual(enrich.update_oui(), 0)
         request = opened.call_args[0][0]

@@ -24,6 +24,11 @@ classifiers = [
 ]
 dependencies = ["rich>=13"]
 
+[project.urls]
+Homepage = "https://github.com/iklobato/ifpretty"
+Repository = "https://github.com/iklobato/ifpretty"
+Issues = "https://github.com/iklobato/ifpretty/issues"
+
 [project.scripts]
 ifpretty = "ifpretty.cli:main"
 

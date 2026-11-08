@@ -625,10 +625,11 @@ class TopologyTest(unittest.TestCase):
         resp = mock.MagicMock()
         resp.read.return_value = batch
         resp.__enter__.return_value = resp
-        with mock.patch.object(
-            topology.urllib.request, "urlopen", return_value=resp
-        ), mock.patch.object(
-            topology.socket, "gethostbyaddr", return_value=("printer.local", [], [])
+        with (
+            mock.patch.object(topology.urllib.request, "urlopen", return_value=resp),
+            mock.patch.object(
+                topology.socket, "gethostbyaddr", return_value=("printer.local", [], [])
+            ),
         ):
             info = topology.lookup_ips(["1.1.1.1", "192.168.1.5"])
         self.assertEqual(info["1.1.1.1"]["org"], "Cloudflare")  # public via API
