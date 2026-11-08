@@ -268,15 +268,18 @@ class LinuxLive:
     _DEV_COLUMNS = 2 * _DEV_RECEIVE_COLUMNS
 
     def __init__(
-        self, files: LinuxLiveFiles = LinuxLiveFiles(), notes: TextIO | None = None
+        self, files: LinuxLiveFiles | None = None, notes: TextIO | None = None
     ) -> None:
-        self._files = files
+        self._files = files  # None: the real /proc and /etc paths
         self._notes = notes  # None: sys.stderr at write time
 
     def enrich(self, by_name: dict[str, Interface]) -> None:
         self._apply_default_route(by_name)
         self._apply_traffic(by_name)
         self._apply_dns(by_name)
+
+    def _paths(self) -> LinuxLiveFiles:
+        return self._files or LinuxLiveFiles()
 
     def _read(self, path: Path) -> str:
         try:
@@ -297,7 +300,7 @@ class LinuxLive:
         )
 
     def _apply_default_route(self, by_name: dict[str, Interface]) -> None:
-        table = self._read(self._files.route_table).splitlines()[1:]  # skip header
+        table = self._read(self._paths().route_table).splitlines()[1:]  # skip header
         defaults = [row.split() for row in table if self._is_default(row.split())]
         if not defaults:
             return
@@ -311,7 +314,7 @@ class LinuxLive:
             iface.gateway = str(ipaddress.IPv4Address(little_endian[::-1]))
 
     def _apply_traffic(self, by_name: dict[str, Interface]) -> None:
-        lines = self._read(self._files.net_dev).splitlines()
+        lines = self._read(self._paths().net_dev).splitlines()
         for line in lines[self._DEV_HEADER_LINES :]:
             name, _, counters = line.partition(":")
             iface = by_name.get(name.strip())
@@ -336,7 +339,7 @@ class LinuxLive:
         if owner is None:
             return
         for words in (
-            line.split() for line in self._read(self._files.resolv_conf).splitlines()
+            line.split() for line in self._read(self._paths().resolv_conf).splitlines()
         ):
             if words[:1] == ["nameserver"] and len(words) > 1:
                 owner.dns.append(words[1])
