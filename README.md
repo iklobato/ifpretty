@@ -72,13 +72,17 @@ en0  ● active  ·  Ethernet/Wi-Fi
 
 ---
 
-## Live system data — `-l` / `--live` (macOS)
+## Live system data — `-l` / `--live` (macOS, Linux)
 
 Cross‑references the running system and adds, per interface:
 
 - **default route + gateway**, **friendly hardware‑port names** (e.g. "Wi‑Fi"),
 - **DNS servers + search domains**, **DHCP server + lease**,
 - **traffic counters** (bytes **and** packets) and **error / collision counts**.
+
+On Linux it reads `/proc/net/route`, `/proc/net/dev` and `/etc/resolv.conf`
+(no extra tools, so it works in slim containers): default route, gateway,
+counters and DNS. Port names and the DHCP lease are macOS‑only.
 
 ```sh
 ifpretty -l
@@ -167,7 +171,9 @@ Appends a legend explaining every flag / option / nd6 bit seen in the output.
 ## Refresh vendor DB — `--update-oui`
 
 Downloads the latest IEEE OUI registry into the cache (overrides the bundled
-copy used for MAC → vendor lookups).
+copy used for MAC → vendor lookups). If Python cannot verify the TLS
+certificate (older macOS `/etc/ssl/cert.pem` lacks a root the Keychain trusts),
+it retries with `curl`, which uses the Keychain.
 
 ---
 
@@ -179,7 +185,7 @@ copy used for MAC → vendor lookups).
 | `-v`, `--verbose` | show every field; expand collapsed interfaces |
 | `-r`, `--records` | compact label/value layout |
 | `-t`, `--table` | single wide table (≤ 240 cols) |
-| `-l`, `--live` | route, traffic, names, DNS, DHCP (macOS) |
+| `-l`, `--live` | route, traffic, DNS (macOS, Linux); names, DHCP (macOS) |
 | `-c`, `--check` | ping the default gateway (macOS) |
 | `-w`, `--wan` | public IP / ASN / geo (opt‑in, external) |
 | `-d`, `--diff` | show changes since the previous run |
@@ -196,10 +202,11 @@ copy used for MAC → vendor lookups).
 - `IFPRETTY_CACHE` — cache dir for the WAN lookup, refreshed OUI DB, and the diff
   snapshot (default `~/.cache/ifpretty/`).
 
-The parsing, formatting and offline enrichment work **anywhere** you can pipe
-`ifconfig` output in. `--live` / `--check` / `--record` rely on macOS tools
-(`route`, `netstat`, `networksetup`, `scutil`, `ipconfig`, `ping`) and no‑op (or
-degrade) elsewhere. `--wan` and `--map`'s IP lookup need internet and fail
+The parsing, formatting and offline enrichment read both **macOS** `ifconfig`
+and **Linux** net‑tools `ifconfig` (Debian/Ubuntu/Fedora `net-tools` 2.x; on
+Linux the RX/TX counters show without `--live`). `--live` works on macOS and
+Linux; `--check` / `--record` rely on macOS tools (`route`, `netstat`, `ping`)
+and no‑op elsewhere. `--wan` and `--map`'s IP lookup need internet and fail
 gracefully without it.
 
 ## Architecture
