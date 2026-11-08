@@ -60,4 +60,6 @@ jobs:
       - name: Fail when docs/img is stale
         run: |
           git status --porcelain docs/img
+          git diff --stat docs/img
+          git diff -U0 docs/img | grep '^[-+]' | grep -v '^[-+][-+]' | head -40
           test -z "$(git status --porcelain docs/img)"
