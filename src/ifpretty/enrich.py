@@ -14,7 +14,9 @@ import subprocess
 import sys
 import time
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 from .model import Inet, Interface
 
@@ -242,9 +244,114 @@ def _apply_dhcp(by_name: dict[str, Interface]) -> None:
             iface.dhcp_lease = int(lease.strip())
 
 
+@dataclass(frozen=True)
+class LinuxLiveFiles:
+    """Where Linux keeps the --live data (overridable for tests)."""
+
+    route_table: Path = Path("/proc/net/route")
+    net_dev: Path = Path("/proc/net/dev")
+    resolv_conf: Path = Path("/etc/resolv.conf")
+
+
+class LinuxLive:
+    """--live on Linux, read straight from /proc and /etc: default route and
+    gateway, per-interface counters, resolvers. Needs no helper tools, so it
+    works in slim containers. DHCP lease and port names have no portable source.
+    """
+
+    _ALL_ZERO = "00000000"  # destination and mask of the default route
+    _IFACE, _DESTINATION, _GATEWAY, _METRIC, _MASK = 0, 1, 2, 6, 7  # route columns
+    _DEV_HEADER_LINES = 2
+    _DEV_RECEIVE_COLUMNS = 8  # then 8 transmit columns
+    _DEV_COLUMNS = 2 * _DEV_RECEIVE_COLUMNS
+
+    def __init__(
+        self, files: LinuxLiveFiles = LinuxLiveFiles(), notes: TextIO | None = None
+    ) -> None:
+        self._files = files
+        self._notes = notes  # None: sys.stderr at write time
+
+    def enrich(self, by_name: dict[str, Interface]) -> None:
+        self._apply_default_route(by_name)
+        self._apply_traffic(by_name)
+        self._apply_dns(by_name)
+
+    def _read(self, path: Path) -> str:
+        try:
+            return path.read_text()
+        except OSError as e:
+            note = f"ifpretty: --live: cannot read {path} ({e.strerror})\n"
+            (self._notes or sys.stderr).write(note)
+            return ""
+
+    def _metric(self, route: list[str]) -> int:
+        return int(route[self._METRIC])
+
+    def _is_default(self, route: list[str]) -> bool:
+        return (
+            len(route) > self._MASK
+            and route[self._DESTINATION] == self._ALL_ZERO
+            and route[self._MASK] == self._ALL_ZERO
+        )
+
+    def _apply_default_route(self, by_name: dict[str, Interface]) -> None:
+        table = self._read(self._files.route_table).splitlines()[1:]  # skip header
+        defaults = [row.split() for row in table if self._is_default(row.split())]
+        if not defaults:
+            return
+        best = min(defaults, key=self._metric)
+        iface = by_name.get(best[self._IFACE])
+        if iface is None:
+            return
+        iface.is_default = True
+        if best[self._GATEWAY] != self._ALL_ZERO:  # a device route has no gateway
+            little_endian = bytes.fromhex(best[self._GATEWAY])
+            iface.gateway = str(ipaddress.IPv4Address(little_endian[::-1]))
+
+    def _apply_traffic(self, by_name: dict[str, Interface]) -> None:
+        lines = self._read(self._files.net_dev).splitlines()
+        for line in lines[self._DEV_HEADER_LINES :]:
+            name, _, counters = line.partition(":")
+            iface = by_name.get(name.strip())
+            values = [int(value) for value in counters.split() if value.isdigit()]
+            if iface is not None and len(values) >= self._DEV_COLUMNS:
+                self._store_counters(iface, values)
+
+    def _store_counters(self, iface: Interface, values: list[int]) -> None:
+        """/proc/net/dev order: bytes packets errs drop fifo frame compressed
+        multicast, then bytes packets errs drop fifo colls carrier compressed."""
+        rx_bytes, rx_pkts, rx_errs, *_ = values[: self._DEV_RECEIVE_COLUMNS]
+        tx_bytes, tx_pkts, tx_errs, _, _, colls, *_ = values[
+            self._DEV_RECEIVE_COLUMNS :
+        ]
+        iface.rx_bytes, iface.rx_pkts, iface.rx_errs = rx_bytes, rx_pkts, rx_errs
+        iface.tx_bytes, iface.tx_pkts, iface.tx_errs = tx_bytes, tx_pkts, tx_errs
+        iface.collisions = colls
+
+    def _apply_dns(self, by_name: dict[str, Interface]) -> None:
+        """resolv.conf is system-wide, so it belongs to the default-route interface."""
+        owner = next((iface for iface in by_name.values() if iface.is_default), None)
+        if owner is None:
+            return
+        for words in (
+            line.split() for line in self._read(self._files.resolv_conf).splitlines()
+        ):
+            if words[:1] == ["nameserver"] and len(words) > 1:
+                owner.dns.append(words[1])
+                continue
+            if words[:1] in (["search"], ["domain"]):
+                owner.search_domains.extend(words[1:])
+
+
 def enrich_live(interfaces: list[Interface]) -> None:
     """Augment interfaces with route, traffic, names, DNS and DHCP lease."""
     by_name = {i.name: i for i in interfaces}
+    if sys.platform.startswith("linux"):
+        LinuxLive().enrich(by_name)
+        return
+    if sys.platform != "darwin":
+        sys.stderr.write("ifpretty: --live supports macOS and Linux; skipping\n")
+        return
     _apply_default_route(by_name)
     _apply_traffic(by_name)
     _apply_hw_ports(by_name)
