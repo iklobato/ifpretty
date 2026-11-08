@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from .enrich import ip_scope, ipv4_net_info, is_eui64, link_mbps, mac_kind, mac_vendor
 from .model import Inet, Inet6, Interface
 from .parse import kv_pairs
-from .enrich import ip_scope, ipv4_net_info, is_eui64, link_mbps, mac_kind, mac_vendor
 
 
 def mtu_note(mtu: str) -> str:

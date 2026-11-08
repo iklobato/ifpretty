@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import time
 import shutil
 import sys
+import time
 from typing import Callable
+
 from rich import box
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from .model import Interface, JsonObject
 from .enrich import diff_snapshots
 from .formatting import (
     DASH,
@@ -26,6 +26,7 @@ from .formatting import (
     minor_line,
     status_badge,
 )
+from .model import Interface, JsonObject
 
 
 def render_diff(

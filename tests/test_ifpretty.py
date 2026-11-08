@@ -53,6 +53,7 @@ def run(flags, stdin_text, history=None):
             capture_output=True,
             text=True,
             env=env,
+            check=False,
         )
 
 
@@ -125,20 +126,20 @@ class SnapshotTest(unittest.TestCase):
         fake = mock.MagicMock()
         fake.read.return_value = payload
         fake.__enter__.return_value = fake
-        with tempfile.TemporaryDirectory() as cache:
-            with (
-                mock.patch.object(enrich, "_CACHE_DIR", Path(cache)),
-                mock.patch.object(enrich.urllib.request, "urlopen", return_value=fake),
+        with (
+            tempfile.TemporaryDirectory() as cache,
+            mock.patch.object(enrich, "_CACHE_DIR", Path(cache)),
+            mock.patch.object(enrich.urllib.request, "urlopen", return_value=fake),
+        ):
+            data = enrich.fetch_wan()
+            self.assertEqual(data["ip"], "203.0.113.5")
+            self.assertEqual(data["asn"], "AS13335")
+            self.assertTrue((Path(cache) / "wan.json").exists())  # cached
+            # second call serves from cache (urlopen would now raise)
+            with mock.patch.object(
+                enrich.urllib.request, "urlopen", side_effect=OSError("no net")
             ):
-                data = enrich.fetch_wan()
-                self.assertEqual(data["ip"], "203.0.113.5")
-                self.assertEqual(data["asn"], "AS13335")
-                self.assertTrue((Path(cache) / "wan.json").exists())  # cached
-                # second call serves from cache (urlopen would now raise)
-                with mock.patch.object(
-                    enrich.urllib.request, "urlopen", side_effect=OSError("no net")
-                ):
-                    self.assertEqual(enrich.fetch_wan()["ip"], "203.0.113.5")
+                self.assertEqual(enrich.fetch_wan()["ip"], "203.0.113.5")
 
     def test_update_oui_writes_cache(self):
         import tempfile
@@ -149,20 +150,20 @@ class SnapshotTest(unittest.TestCase):
 
         # A0B1C2: first octet 0xA0 is universal + unicast, so vendor lookup applies.
         csv_text = (
-            "Registry,Assignment,Organization Name,Organization Address\r\n"
-            'MA-L,A0B1C2,"Acme Corp","somewhere"\r\n'
-        ).encode()
+            b"Registry,Assignment,Organization Name,Organization Address\r\n"
+            b'MA-L,A0B1C2,"Acme Corp","somewhere"\r\n'
+        )
         fake = mock.MagicMock()
         fake.read.return_value = csv_text
         fake.__enter__.return_value = fake
-        with tempfile.TemporaryDirectory() as cache:
-            with (
-                mock.patch.object(enrich, "_CACHE_DIR", Path(cache)),
-                mock.patch.object(enrich.urllib.request, "urlopen", return_value=fake),
-            ):
-                self.assertEqual(enrich.update_oui(), 0)
-                self.assertTrue((Path(cache) / "oui.tsv.gz").exists())
-                self.assertEqual(enrich.mac_vendor("a0:b1:c2:00:11:22"), "Acme Corp")
+        with (
+            tempfile.TemporaryDirectory() as cache,
+            mock.patch.object(enrich, "_CACHE_DIR", Path(cache)),
+            mock.patch.object(enrich.urllib.request, "urlopen", return_value=fake),
+        ):
+            self.assertEqual(enrich.update_oui(), 0)
+            self.assertTrue((Path(cache) / "oui.tsv.gz").exists())
+            self.assertEqual(enrich.mac_vendor("a0:b1:c2:00:11:22"), "Acme Corp")
 
     def test_diff_snapshots(self):
         sys.path.insert(0, str(SRC))

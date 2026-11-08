@@ -18,8 +18,8 @@ SRC = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(SRC))
 
 from ifpretty import cli, enrich, formatting, model, parse, render, topology  # noqa
-from ifpretty.model import Inet, Inet6, Interface  # noqa: E402
-from rich.text import Text  # noqa: E402
+from ifpretty.model import Inet, Inet6, Interface
+from rich.text import Text
 
 
 def plain(markup: str) -> str:

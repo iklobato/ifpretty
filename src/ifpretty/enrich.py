@@ -142,7 +142,9 @@ def link_mbps(media: str) -> int:
 def _run(cmd: list[str], timeout: float = 3.0) -> str | None:
     """Run a helper command; return stdout, or None (with a stderr note) on failure."""
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, check=False
+        )
     except (OSError, subprocess.SubprocessError) as e:
         sys.stderr.write(f"ifpretty: could not run {cmd[0]} ({e})\n")
         return None

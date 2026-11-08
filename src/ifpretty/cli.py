@@ -28,7 +28,11 @@ from .render import RENDERERS, render_diff, render_legend, render_overview
 def _capture_ifconfig(interfaces: list[str]) -> str:
     try:
         r = subprocess.run(
-            ["ifconfig", *interfaces], capture_output=True, text=True, timeout=10
+            ["ifconfig", *interfaces],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,  # ifconfig exits nonzero for an unknown name; stdout is enough
         )
     except (OSError, subprocess.SubprocessError) as e:
         print(f"ifpretty: could not run ifconfig ({e})", file=sys.stderr)
