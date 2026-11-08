@@ -308,6 +308,9 @@ class Runner:
             # never the real ~/.cache/ifpretty/samples.csv
             "IFPRETTY_HISTORY": str(self._ws.root / "no-history.csv"),
             "FORCE_COLOR": "1",  # rich ignores CLICOLOR_FORCE
+            # same palette on every machine: rich picks colors from these
+            "COLORTERM": "truecolor",
+            "TERM": "xterm-256color",
         }
         env.update(shot.env)
         return env
