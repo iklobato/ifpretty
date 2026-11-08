@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from .model import Inet, Interface
+from .model import Inet, Interface, JsonObject
 
 _CACHE_DIR = Path(
     os.environ.get("IFPRETTY_CACHE") or Path.home() / ".cache" / "ifpretty"
@@ -474,7 +474,8 @@ def fetch_wan(timeout: float = 3.0) -> dict[str, str] | None:
     try:
         blob = json.loads(cache.read_text())
         if int(time.time()) - int(blob.get("_ts", 0)) < _WAN_TTL:
-            return blob["data"]
+            cached: dict[str, str] = blob["data"]
+            return cached
     except (OSError, ValueError, KeyError):
         pass
     try:
@@ -547,9 +548,9 @@ def update_oui(timeout: float = 60.0) -> int:
 _SNAPSHOT_PATH = _CACHE_DIR / "snapshot.json"
 
 
-def snapshot_state(interfaces: list[Interface]) -> dict[str, dict]:
+def snapshot_state(interfaces: list[Interface]) -> dict[str, JsonObject]:
     """Stable per-interface state for diffing — excludes volatile counters/rates."""
-    state: dict[str, dict] = {}
+    state: dict[str, JsonObject] = {}
     for i in interfaces:
         state[i.name] = {
             "up": i.is_up,
@@ -570,7 +571,7 @@ def snapshot_state(interfaces: list[Interface]) -> dict[str, dict]:
     return state
 
 
-def save_snapshot(state: dict[str, dict]) -> None:
+def save_snapshot(state: dict[str, JsonObject]) -> None:
     try:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         _SNAPSHOT_PATH.write_text(json.dumps({"_ts": int(time.time()), "data": state}))
@@ -578,7 +579,7 @@ def save_snapshot(state: dict[str, dict]) -> None:
         pass
 
 
-def load_snapshot() -> tuple[dict[str, dict], int] | None:
+def load_snapshot() -> tuple[dict[str, JsonObject], int] | None:
     try:
         blob = json.loads(_SNAPSHOT_PATH.read_text())
         return blob["data"], int(blob.get("_ts", 0))
@@ -595,7 +596,7 @@ _DIFF_SCALARS = [
 ]
 
 
-def diff_snapshots(old: dict[str, dict], new: dict[str, dict]) -> list[str]:
+def diff_snapshots(old: dict[str, JsonObject], new: dict[str, JsonObject]) -> list[str]:
     """Human-readable (rich-markup) change lines between two snapshots."""
     lines: list[str] = []
     old_names, new_names = set(old), set(new)

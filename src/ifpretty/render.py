@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from .model import Interface
+from .model import Interface, JsonObject
 from .enrich import diff_snapshots
 from .formatting import (
     DASH,
@@ -28,7 +28,9 @@ from .formatting import (
 )
 
 
-def render_diff(prev: tuple[dict[str, dict], int] | None, new: dict[str, dict]) -> None:
+def render_diff(
+    prev: tuple[dict[str, JsonObject], int] | None, new: dict[str, JsonObject]
+) -> None:
     console = _console(120)
     if prev is None:
         console.print(

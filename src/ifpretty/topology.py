@@ -25,7 +25,7 @@ from .enrich import (
     mac_kind,
     mac_vendor,
 )
-from .model import Interface
+from .model import Interface, JsonObject
 
 _IPV4 = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 _RTT = re.compile(r"(\d+\.\d+) ms")
@@ -93,9 +93,9 @@ def _is_public(ip: str) -> bool:
         return False
 
 
-def parse_ipapi_batch(items: list[dict]) -> dict[str, dict]:
+def parse_ipapi_batch(items: list[JsonObject]) -> dict[str, JsonObject]:
     """ip-api.com /batch response → {ip: {host, org, isp, asn, country, cc, city}}."""
-    info: dict[str, dict] = {}
+    info: dict[str, JsonObject] = {}
     for it in items:
         if it.get("status") == "success" and it.get("query"):
             info[it["query"]] = {
@@ -110,10 +110,10 @@ def parse_ipapi_batch(items: list[dict]) -> dict[str, dict]:
     return info
 
 
-def lookup_ips(ips: list[str], timeout: float = 5.0) -> dict[str, dict]:
+def lookup_ips(ips: list[str], timeout: float = 5.0) -> dict[str, JsonObject]:
     """Enrich IPs: whois-style org/ASN/country (public, via ip-api batch) +
     reverse-DNS host. Best-effort; degrades silently offline."""
-    info: dict[str, dict] = {}
+    info: dict[str, JsonObject] = {}
     public = sorted({ip for ip in ips if _is_public(ip)})
     private = sorted({ip for ip in ips if ip and not _is_public(ip)})
 
@@ -162,7 +162,7 @@ def _company(info: dict[str, str]) -> str:
 
 def _ip_detail(
     ip: str,
-    info: dict,
+    info: JsonObject,
     *,
     mac: str = "",
     vendor: str = "",
@@ -200,16 +200,18 @@ def build_graph(
     hops: list[Hop],
     neighbors: list[Neighbor],
     target: str,
-    ipinfo: dict[str, dict] | None = None,
-) -> tuple[list[dict], list[dict], dict[str, list[str]]]:
+    ipinfo: dict[str, JsonObject] | None = None,
+) -> tuple[list[JsonObject], list[JsonObject], dict[str, list[str]]]:
     """Build vis-network (nodes, edges, zones) from the topology (pure)."""
     ipinfo = ipinfo or {}
-    nodes: list[dict] = []
-    edges: list[dict] = []
+    nodes: list[JsonObject] = []
+    edges: list[JsonObject] = []
     seen: set[str] = set()
     zones: dict[str, list[str]] = {"computer": [], "local": [], "internet": []}
 
-    def node(nid, label, group, level, zone, title):
+    def node(
+        nid: str, label: str, group: str, level: int, zone: str, title: str
+    ) -> None:
         if nid not in seen:
             seen.add(nid)
             nodes.append(
@@ -374,7 +376,12 @@ _GROUPS = {
 }
 
 
-def render_html(nodes, edges, zones, subtitle: str) -> str:
+def render_html(
+    nodes: list[JsonObject],
+    edges: list[JsonObject],
+    zones: dict[str, list[str]],
+    subtitle: str,
+) -> str:
     return _TEMPLATE % {
         "nodes": json.dumps(nodes),
         "edges": json.dumps(edges),

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
+
+# A decoded JSON object (snapshot state, ip-api records, vis.js nodes/edges).
+JsonObject = dict[str, Any]
 
 
 @dataclass(frozen=True)
