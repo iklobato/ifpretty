@@ -21,18 +21,21 @@ from .enrich import (
     snapshot_state,
     update_oui,
 )
+from .model import Interface
 from .parse import parse
 from .render import RENDERERS, render_diff, render_legend, render_overview
 
 
 def _capture_ifconfig(interfaces: list[str]) -> str:
+    # ifconfig takes one name at most ("ifconfig en0 lo0" fails), so for named
+    # interfaces list them all (-a also shows down ones) and filter after parse.
     try:
         r = subprocess.run(
-            ["ifconfig", *interfaces],
+            ["ifconfig", "-a"] if interfaces else ["ifconfig"],
             capture_output=True,
             text=True,
             timeout=10,
-            check=False,  # ifconfig exits nonzero for an unknown name; stdout is enough
+            check=False,
         )
     except (OSError, subprocess.SubprocessError) as e:
         print(f"ifpretty: could not run ifconfig ({e})", file=sys.stderr)
@@ -51,6 +54,23 @@ def acquire_input(interfaces: list[str]) -> str:
     if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
         return sys.stdin.read()
     return _capture_ifconfig(interfaces)
+
+
+class InterfaceSelection:
+    """The interface names given on the command line; none means all."""
+
+    def __init__(self, names: list[str]) -> None:
+        self._names = names
+
+    def pick(self, interfaces: list[Interface]) -> list[Interface]:
+        """Keep the named interfaces, warning on stderr for each unknown name."""
+        if not self._names:
+            return interfaces
+        known = {iface.name for iface in interfaces}
+        for name in self._names:
+            if name not in known:
+                sys.stderr.write(f"ifpretty: no interface named {name}\n")
+        return [iface for iface in interfaces if iface.name in self._names]
 
 
 def _cli() -> int:
@@ -157,7 +177,9 @@ def _cli() -> int:
         print("ifpretty: no interface data (is `ifconfig` on PATH?)", file=sys.stderr)
         return 1
 
-    interfaces = parse(data)
+    interfaces = InterfaceSelection(args.interfaces).pick(parse(data))
+    if not interfaces:
+        return 1
     if args.map is not None:  # browser topology map, then exit
         from .topology import open_map
 

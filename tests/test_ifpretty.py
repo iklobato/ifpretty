@@ -256,13 +256,13 @@ class AcquireInputTest(unittest.TestCase):
     def test_tty_runs_ifconfig(self) -> None:
         self.assertEqual(
             self._acquire_with_stdin_mode(stat.S_IFCHR),
-            (IFCONFIG_TEXT, ["ifconfig", "en0"]),
+            (IFCONFIG_TEXT, ["ifconfig", "-a"]),
         )
 
     def test_socket_runs_ifconfig(self) -> None:
         self.assertEqual(
             self._acquire_with_stdin_mode(stat.S_IFSOCK),
-            (IFCONFIG_TEXT, ["ifconfig", "en0"]),
+            (IFCONFIG_TEXT, ["ifconfig", "-a"]),
         )
 
     def test_pipe_is_read(self) -> None:
@@ -393,6 +393,77 @@ class OuiTlsFallbackTest(unittest.TestCase):
             urllib.error.URLError("timed out"), OUI_CSV.decode()
         )
         self.assertEqual((code, argv), (1, None))
+
+
+# The real ifconfig (macOS and net-tools) takes one interface name at most:
+# `ifconfig en0 lo0` fails with "lo0: bad value". `-a` lists every interface.
+STRICT_IFCONFIG = """#!/bin/sh
+if [ $# -eq 0 ] || [ "$*" = "-a" ]; then cat '{sample}'; exit 0; fi
+if [ $# -gt 1 ]; then echo "ifconfig: $2: bad value" >&2; exit 1; fi
+echo "ifconfig: interface $1 does not exist" >&2; exit 1
+"""
+
+
+class InterfaceFilterTest(unittest.TestCase):
+    """`ifpretty en0 en1` shows exactly the named interfaces."""
+
+    def _strict_ifconfig_env(self, bindir: str) -> dict[str, str]:
+        stub = Path(bindir) / "ifconfig"
+        stub.write_text(STRICT_IFCONFIG.format(sample=SAMPLE))
+        stub.chmod(EXECUTABLE_MODE)
+        env = os.environ.copy()
+        env.pop(COLOR_FORCING_VAR, None)
+        env.update(
+            NO_COLOR="1",
+            IFPRETTY_CACHE=str(Path(bindir) / "cache"),
+            PYTHONPATH=str(SRC),
+            PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
+        )
+        return env
+
+    def _run_with_strict_ifconfig(
+        self, names: list[str]
+    ) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory() as bindir:
+            env = self._strict_ifconfig_env(bindir)
+            return subprocess.run(
+                [sys.executable, "-m", "ifpretty", "--records", *names],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+
+    def _shown_names(self, output: str) -> list[str]:
+        """Interface names that start a record (first word of a non-indented line)."""
+        heads = [line.split()[0] for line in output.splitlines() if line[:1].isalnum()]
+        return [name for name in heads if not name[0].isdigit()]
+
+    def test_two_names_with_real_ifconfig_rules(self) -> None:
+        completed = self._run_with_strict_ifconfig(["en0", "en1"])
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("2 interfaces", completed.stdout)
+        self.assertEqual(self._shown_names(completed.stdout), ["en0"])
+        self.assertIn("en1", completed.stdout)  # collapsed: no routable address
+        self.assertNotIn("lo0", completed.stdout)
+
+    def test_names_filter_piped_input(self) -> None:
+        completed = run(["--records", "en0"], SAMPLE.read_text())
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self._shown_names(completed.stdout), ["en0"])
+        self.assertNotIn("lo0", completed.stdout)
+
+    def test_unknown_name_fails_and_names_it(self) -> None:
+        completed = run(["nosuch0"], SAMPLE.read_text())
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("ifpretty: no interface named nosuch0", completed.stderr)
+
+    def test_unknown_name_next_to_a_known_one_warns(self) -> None:
+        completed = run(["--records", "en0", "nosuch0"], SAMPLE.read_text())
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("ifpretty: no interface named nosuch0", completed.stderr)
+        self.assertEqual(self._shown_names(completed.stdout), ["en0"])
 
 
 if __name__ == "__main__":

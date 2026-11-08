@@ -57,9 +57,9 @@ FAKE_TOOLS = (
     (
         "ifconfig",
         """#!/bin/sh
-# Prints $FAKE_IFCONFIG, limited to the interfaces named as arguments.
-if [ $# -eq 0 ]; then cat "$FAKE_IFCONFIG"; exit 0; fi
-awk -v want=" $* " '/^[^ \\t]/ { n = $1; sub(/:$/, "", n); keep = index(want, " " n " ") > 0 } keep' "$FAKE_IFCONFIG"
+# Prints $FAKE_IFCONFIG. Like the real one, at most one name: "-a" lists all.
+if [ $# -eq 0 ] || [ "$*" = "-a" ]; then cat "$FAKE_IFCONFIG"; exit 0; fi
+echo "ifconfig: $*: bad value" >&2; exit 1
 """,
     ),
     (
